@@ -1,0 +1,29 @@
+name: 早盘助手
+
+on:
+  schedule:
+    # 北京时间 09:26 = UTC 01:26（数据滞后30秒+1分钟缓冲）
+    - cron: "26 1 * * 1-5"
+    # 北京时间 11:31 = UTC 03:31
+    - cron: "31 3 * * 1-5"
+    # 北京时间 15:01 = UTC 07:01
+    - cron: "1 7 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: pip install requests
+
+      - name: 运行早盘抓取
+        run: python 早盘抓取.py
