@@ -289,22 +289,72 @@ def write_to_cloud(time_point, data):
         return False
 
 
+def get_target_slot():
+    """
+    根据当前北京时间，判断应该抓取哪个时间点的数据。
+    返回 None 表示当前不在任何窗口内（太早或太晚）。
+    """
+    bj = beijing_now()
+    minutes = bj.hour * 60 + bj.minute
+
+    # 09:20-11:00 → 抓取 09:20 数据
+    if 9 * 60 + 20 <= minutes < 11 * 60 + 30:
+        return "09:20"
+    # 11:30-14:59 → 抓取 11:30 数据
+    elif 11 * 60 + 30 <= minutes < 15 * 60:
+        return "11:30"
+    # 15:00-23:59 → 抓取 15:00 数据
+    elif minutes >= 15 * 60:
+        return "15:00"
+    else:
+        return None
+
+
+def slot_already_captured(time_point):
+    """检查今天这个时间点的数据是否已经写入 Supabase"""
+    today_str = beijing_today().strftime("%Y-%m-%d")
+    h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    try:
+        r = requests.get(
+            SUPABASE_URL, headers=h,
+            params={"trade_date": f"eq.{today_str}", "time_point": f"eq.{time_point}"},
+            timeout=10
+        )
+        rows = r.json() if r.status_code == 200 else []
+        if rows:
+            # 检查是否真的有数据（不只是空记录）
+            row = rows[0]
+            if row.get("total_turnover") and row["total_turnover"] not in ("None", "fail", ""):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def main():
-    now = datetime.now()
-    cm = now.hour*60 + now.minute
-    tp = None
-    for t, (s, e) in TIME_SLOTS.items():
-        if s <= cm <= e:
-            tp = t
-            break
-    if not tp:
-        print(f"[{now.strftime('%H:%M')}] Not in time window, skip")
-        return
-    print(f"Time: {tp} Beijing")
+    bj = beijing_now()
+    print(f"[{bj.strftime('%H:%M:%S')} 北京时间] 早盘助手启动")
+
+    # 1. 判断交易日
     if not is_trading_day():
-        print("Not a trading day, skip")
+        print("[跳过] 今天不是交易日")
         return
 
+    # 2. 判断当前应抓取哪个时间点
+    tp = get_target_slot()
+    if not tp:
+        print(f"[跳过] 当前时间 {bj.strftime('%H:%M')} 不在任何抓取窗口内")
+        return
+    print(f"[目标] 时间点: {tp}")
+
+    # 3. 智能去重：已经抓过的跳过
+    if slot_already_captured(tp):
+        print(f"[跳过] {tp} 今天已有数据，无需重复抓取")
+        return
+    print(f"[执行] {tp} 尚无数据，开始抓取...")
+    print()
+
+    # 4. 抓取数据
     print("[1/4] Turnover...")
     turnover = retry_fetch(get_total_turnover, "Turnover")
     print(f"  {turnover}")
@@ -321,7 +371,7 @@ def main():
         lu, br = lu_br
     print(f"  LU={lu} BR={br}")
 
-    # 查询昨日同期数据
+    # 5. 昨日对比
     print("[4/5] Yesterday comparison...")
     yesterday = query_yesterday(tp)
     t_change = None
@@ -334,12 +384,12 @@ def main():
     else:
         print("  No yesterday data")
 
-    # 计算情绪评分
+    # 6. 情绪评分
     print("[5/5] Sentiment score...")
     sentiment = calc_sentiment(t_change, rising, lu, br)
     print(f"  Score: {sentiment}/10")
 
-    # 写入云端
+    # 7. 写入云端
     print("[Write] Writing to cloud...")
     data = {
         "turnover": turnover,
@@ -353,7 +403,7 @@ def main():
     ok = write_to_cloud(tp, data)
     print(f"  {'OK' if ok else 'FAIL'}")
 
-    # 微信推送
+    # 8. 微信推送
     try:
         wx_title = f"【早盘助手】{tp} 复盘数据"
         wx_desp = f"## {tp} 复盘数据\n\n"

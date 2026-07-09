@@ -2,17 +2,16 @@ name: 早盘助手
 
 on:
   schedule:
-    # 北京时间 09:26 = UTC 01:26（数据滞后30秒+1分钟缓冲）
-    - cron: "26 1 * * 1-5"
-    # 北京时间 11:31 = UTC 03:31
-    - cron: "31 3 * * 1-5"
-    # 北京时间 15:01 = UTC 07:01
-    - cron: "1 7 * * 1-5"
+    # 每30分钟触发一次，北京时间 9:00-15:59（UTC 1:00-7:59），周一至周五
+    # 共14次/天 = 约14分钟/天，远低于免费额度
+    - cron: "0,30 1-7 * * 1-5"
   workflow_dispatch:
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
