@@ -6,7 +6,10 @@ import requests
 import json
 import re
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+
+# 北京时间时区（GitHub Actions 默认 UTC，日期操作需转北京时间）
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 SUPABASE_URL = "https://au7f2dhyaiv4.meoo.zone/sb-api/rest/v1/daily_data"
 SUPABASE_KEY = "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzgyODk1Mzc1LCJleHAiOjEzMjkzNTM1Mzc1fQ.LsWoyeGCwcQxNxTRLudvjBHWyk4lfHbQbDpN0-NV020"
@@ -23,6 +26,16 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0",
     "Referer": "https://quote.eastmoney.com/",
 }
+
+
+def beijing_now():
+    """返回北京时间 now（GitHub Actions 上是 UTC+8）"""
+    return datetime.now(timezone.utc).astimezone(BEIJING_TZ)
+
+
+def beijing_today():
+    """返回北京时间今天的 date"""
+    return beijing_now().date()
 
 
 def retry_fetch(fn, name):
@@ -45,7 +58,7 @@ def retry_fetch(fn, name):
 def prev_trading_day(check_date=None):
     """获取上一个交易日"""
     if check_date is None:
-        check_date = date.today()
+        check_date = beijing_today()
     d = check_date - timedelta(days=1)
     while d.weekday() >= 5:
         d -= timedelta(days=1)
@@ -54,7 +67,7 @@ def prev_trading_day(check_date=None):
 
 def is_trading_day(check_date=None):
     if check_date is None:
-        check_date = date.today()
+        check_date = beijing_today()
     if check_date.weekday() >= 5:
         return False
     holidays = {
@@ -120,7 +133,7 @@ def is_new_stock(code):
             ld = datetime.strptime(str(data["data"]["f26"])[:10],"%Y-%m-%d").date()
             count = 0
             d = ld
-            while d <= date.today():
+            while d <= beijing_today():
                 if d.weekday() < 5: count += 1
                 d += timedelta(days=1)
             return count < 5
@@ -244,7 +257,7 @@ def query_yesterday(tp):
 
 
 def write_to_cloud(time_point, data):
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = beijing_today().strftime("%Y-%m-%d")
     h = {
         "apikey":SUPABASE_KEY,
         "Authorization":f"Bearer {SUPABASE_KEY}",
@@ -301,7 +314,11 @@ def main():
     print(f"  {rising}")
 
     print("[3/4] Limit-up/Broken...")
-    lu, br = retry_fetch(get_limit_up_and_broken, "LimitUp")
+    lu_br = retry_fetch(get_limit_up_and_broken, "LimitUp")
+    if lu_br == "fail":
+        lu, br = "fail", "fail"
+    else:
+        lu, br = lu_br
     print(f"  LU={lu} BR={br}")
 
     # 查询昨日同期数据
