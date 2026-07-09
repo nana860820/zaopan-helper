@@ -14,9 +14,9 @@ MAX_RETRIES = 3
 RETRY_DELAY = 30
 
 TIME_SLOTS = {
-    "09:20": (1*60+20, 1*60+25),   # 09:20-09:25 集合竞价
-    "11:30": (3*60+30, 3*60+59),   # 11:30-11:59 上午收盘
-    "15:00": (7*60+0,  7*60+59),   # 15:00-15:59 全天收盘
+    "09:20": (1*60+20, 1*60+35),    # 09:20-09:35 宽窗口防cron迟到
+    "11:30": (3*60+30, 5*60+0),     # 11:30-13:00 午休冻结期
+    "15:00": (7*60+0,  23*60+59),   # 15:00-23:59 收盘后冻结
 }
 
 HEADERS = {
@@ -335,6 +335,27 @@ def main():
     }
     ok = write_to_cloud(tp, data)
     print(f"  {'OK' if ok else 'FAIL'}")
+
+    # 微信推送
+    try:
+        wx_title = f"【早盘助手】{tp} 复盘数据"
+        wx_desp = f"## {tp} 复盘数据\n\n"
+        wx_desp += f"| 指标 | 数值 |\n|------|------|\n"
+        wx_desp += f"| 总成交额 | {turnover} 亿 |\n"
+        wx_desp += f"| 上证上涨数 | {rising} 家 |\n"
+        wx_desp += f"| 10cm涨停数 | {lu} 家 |\n"
+        if tp != "09:20":
+            wx_desp += f"| 10cm炸板数 | {br} 家 |\n"
+        if sentiment:
+            wx_desp += f"\n**情绪评分: {sentiment}/10**\n"
+        wx_desp += "\n---\n*主板10cm标的，已剔除ST/创业板/科创板/北交所*"
+        SENDKEY = "SCT376083Tr3nNpAXv1zFEykzvuQaHyu0n"
+        requests.post(f"https://sctapi.ftqq.com/{SENDKEY}.send",
+                      data={"title": wx_title, "desp": wx_desp}, timeout=10)
+        print("  WeChat push sent!")
+    except Exception as we:
+        print(f"  WeChat push failed: {we}")
+
     print(f"{'='*50}")
     print(f"  {tp} | T={turnover}({t_change}%) | R={rising}({r_change}%) | LU={lu} BR={br} | {sentiment}/10")
 
